@@ -24,7 +24,7 @@ class Environment:
         self.obstacle_count = obstacle_count
 
         # Creamos una habitación vacía
-        self.room = np.zeros((size, size), dtype=int)
+        self.room = np.full((size, size), self.EMPTY, dtype=int)
 
         # Posición fija del cargador
         self.charger_position = (size - 1, size - 1)
