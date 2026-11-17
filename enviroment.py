@@ -3,6 +3,7 @@ import numpy as np
 import random
 from obstacles.bed import Bed
 from obstacles.table import Table
+from collections import deque
 
 
 class Environment:
@@ -78,6 +79,32 @@ class Environment:
 
         # Una vez colocados los obstáculos, generamos la suciedad
         self.place_dirt()
+
+    def all_cells_reachable(self):
+
+        visited = {self.robot_position}
+        queue = deque([self.robot_position])
+
+        while queue:
+
+            x, y = queue.popleft()
+
+            for dx, dy in self.ACTIONS.values():
+
+                nx = x + dx
+                ny = y + dy
+
+                if (0 <= nx < self.size and
+                    0 <= ny < self.size and
+                    (nx, ny) not in visited and
+                    self.room[nx, ny] != self.OBSTACLE):
+
+                    visited.add((nx, ny))
+                    queue.append((nx, ny))
+
+        free_cells = np.sum(self.room != self.OBSTACLE)
+
+        return len(visited) == free_cells   
 
     # Ubico los obstáculos dentro de la grilla
     def place_obstacles(self, obstacles, max_attempts=100):
