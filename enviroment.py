@@ -106,7 +106,7 @@ class Environment:
         return (
             self.robot.position,
             self.robot.battery,
-            tuple(self.room.flatten()),
+            self.room,
         )
 
     def is_free(self, x, y):
@@ -275,9 +275,11 @@ if __name__ == "__main__":
     total_reward = 0
 
     while not done:
+        print()
+        input("Press Enter to continue...")
         action = random.choice(list(Action))
         observation, reward, done = env.step(action)
         total_reward += reward
+        env.display()
 
-    env.display()
     print(f"Pasos: {env.steps} | Recompensa total: {total_reward:.2f}")

@@ -13,31 +13,41 @@ torch.set_default_device(
 
 seed = 42
 
+# TODO: Determine what to do with this
 # Deep Q Learning Agent
 class DQNAgent:
     def __init__(self, room_size, middle_layers):
-        input_size = room_size * room_size + 3
-        output_size = 4
+        self.cnn = nn.Sequential(
+            nn.Conv2d(4, 32, (3, 3)),
+            nn.ReLU(),
+            nn.Conv2d(32, 256, (3, 3)),
+            nn.ReLU(),
+            nn.Flatten()
+        )
         
-        layers = []
-        current_size = input_size
-        for size in middle_layers:
-            layers.append( nn.Linear(current_size, size) )
-            layers.append( nn.ReLU() )
-            current_size = size
-        layers.append( nn.Linear(current_size, output_size) )
-        layers.append( nn.Softmax() )
+        cnn_output_estimate = 256 * (room_size - 4) * (room_size - 4)
         
-        self.module = nn.Sequential(*layers)
+        self.dense = nn.Sequential(
+            nn.Linear(cnn_output_estimate + 3, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 4),
+            nn.Softmax()
+        )
 
-    def
+    def decide_action(obs):
+        input_
+        input_data = np.concat((obs[0], (obs[1],), obs[2]))
+        output_data = (self.module)(input_data)
+        return np.argmax(output-data)
 
 # TODO: Determine what to do with this
 """
 # Deep Q Learning Agent
 class DQNAgent:
     def __init__(self, room_size, middle_layers):
-        input_size = room_size * room_size + 3
+        input_size = room_size * room_size * 4 + 3
         output_size = 4
         
         layers = []
@@ -51,5 +61,10 @@ class DQNAgent:
         
         self.module = nn.Sequential(*layers)
 
-    def
+    def decide_action(obs):
+        input_data = np.concat((obs[0], (obs[1],), obs[2]))
+        output_data = (self.module)(input_data)
+        return np.argmax(output-data)
+    
+    def receive_reward()
 """
