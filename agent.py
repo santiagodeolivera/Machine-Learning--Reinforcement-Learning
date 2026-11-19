@@ -13,10 +13,11 @@ torch.set_default_device(
 
 seed = 42
 
-# TODO: Determine what to do with this
 # Deep Q Learning Agent
-class DQNAgent:
+class Model(nn.Module):
     def __init__(self, room_size, middle_layers):
+        super(Model, self).__init__()
+
         self.cnn = nn.Sequential(
             nn.Conv2d(4, 32, (3, 3)),
             nn.ReLU(),
@@ -33,38 +34,68 @@ class DQNAgent:
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 4),
-            nn.Softmax()
         )
-
-    def decide_action(obs):
-        input_
-        input_data = np.concat((obs[0], (obs[1],), obs[2]))
-        output_data = (self.module)(input_data)
-        return np.argmax(output-data)
-
-# TODO: Determine what to do with this
-"""
-# Deep Q Learning Agent
-class DQNAgent:
-    def __init__(self, room_size, middle_layers):
-        input_size = room_size * room_size * 4 + 3
-        output_size = 4
-        
-        layers = []
-        current_size = input_size
-        for size in middle_layers:
-            layers.append( nn.Linear(current_size, size) )
-            layers.append( nn.ReLU() )
-            current_size = size
-        layers.append( nn.Linear(current_size, output_size) )
-        layers.append( nn.Softmax() )
-        
-        self.module = nn.Sequential(*layers)
-
-    def decide_action(obs):
-        input_data = np.concat((obs[0], (obs[1],), obs[2]))
-        output_data = (self.module)(input_data)
-        return np.argmax(output-data)
     
-    def receive_reward()
+    def forward(self, obs):
+        cnn_input = obs[2]
+        cnn_output = (self.cnn)(cnn_input)
+        dense_input = np.concat((obs[0], (obs[1],), cnn_output))
+        dense_output = (self.dense)(dense_input)
+        return dense_input
+
+
+def train_target_model(model, env, loss_fn, discount_factor, learning_rate, epochs):
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    for epoch in range(epochs):
+        env.reset()
+
+        done = False
+        current_state = env.get_observation()
+        while not done:
+            optimizer.zero_grad()
+
+            predicted_q = model(current_state)
+
+            best_action = np.argmax(predicted_q)
+            next_state, reward, done = env.step(best_action)
+            target_q = reward + discount_factor * np.max(model(next_state))
+
+            loss = loss_fn(predicted_q, target_q)
+            loss.backward()
+            optimizer.step()
+
+            current_state = next_state
+
+def train_policy_model(model, target_model, loss_fn, discount_factor, learning_rate, epochs):
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    for epoch in range(epochs):
+        env.reset()
+
+        done = False
+        current_state = env.get_observation()
+        while not done:
+            optimizer.zero_grad()
+
+            predicted_action_weights = model(current_state)
+
+            target_action = np.argmax( target_model(current_state) )
+            target_action_weights = np.full_like(predicted_action_weights, -1e9)
+            target_action_weights[target_action] = 1e9
+
+            loss = loss_fn(predicted_action_weights, target_action_weights)
+            loss.backward()
+            optimizer.step()
+
+            current_state = next_state
+
+"""
+def train_model(model, optimizer, criterion, train_loader, epochs):
+    model.train()
+    for epoch in range(epochs):
+        for batch_idx, (data, target) in enumerate(train_loader):
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
 """
