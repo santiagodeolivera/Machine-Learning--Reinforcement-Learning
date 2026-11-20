@@ -21,6 +21,7 @@ class Environment:
     STEP_PENALTY = -0.01      # cada paso cuesta un poco, para que no pierda tiempo
     BUMP_PENALTY = -0.5       # chocar contra una pared o un mueble
     CLEAN_REWARD = 1          # limpiar una celda sucia
+    CLEAN_PENALTY = -0.1      # limpiar una celda limpia
     ALL_CLEAN_REWARD = 10     # dejar toda la habitación limpia
     NO_BATTERY_PENALTY = -10  # quedarse sin batería
 
@@ -78,6 +79,8 @@ class Environment:
             if self.room[self.robot.position] == self.DIRT:
                 self.room[self.robot.position] = self.EMPTY
                 reward += self.CLEAN_REWARD
+            else:
+                reward += self.CLEAN_PENALTY
 
         # Si está en el cargador, recarga
         if self.robot.position == self.charger_position:

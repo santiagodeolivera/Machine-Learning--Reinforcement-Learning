@@ -34,6 +34,7 @@ def train_rl_agent(agent, env, n_episodes, log_every=20):
             obs = next_obs
             total_reward += reward
 
+        eps = agent.epsilon
         agent.end_episode()
 
         dirt_left = int((env.room == env.DIRT).sum())
@@ -46,7 +47,7 @@ def train_rl_agent(agent, env, n_episodes, log_every=20):
                 f"recompensa media {recent[:, 0].mean():7.2f} | "
                 f"limpió {recent[:, 1].mean():4.1f}/{env.dirt_count} | "
                 f"pasos {recent[:, 2].mean():5.1f} | "
-                f"epsilon {agent.epsilon:.3f}"
+                f"epsilon {eps:.3f}"
             )
 
     return history
