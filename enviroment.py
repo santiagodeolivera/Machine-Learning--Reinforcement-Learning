@@ -100,13 +100,14 @@ class Environment:
     def get_observation(self):
         """Lo que el agente "ve" para decidir qué hacer.
 
-        Es una tupla para que se pueda usar como clave en la tabla de Q-learning.
+        Devolvemos una copia de la habitación: si devolviéramos self.room,
+        la observación guardada cambiaría cuando el robot limpia después.
         """
 
         return (
             self.robot.position,
             self.robot.battery,
-            self.room,
+            self.room.copy(),
         )
 
     def is_free(self, x, y):

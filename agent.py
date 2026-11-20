@@ -1,101 +1,245 @@
+"""Agente Deep Q-Learning (DQN) para el robot limpiador.
+
+Basado en: https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
+
+Idea general:
+  - Una red neuronal (CNN + densa) estima Q(s, a): cuánta recompensa futura
+    esperamos si en el estado s hacemos la acción a.
+  - El robot elige acciones con epsilon-greedy (a veces explora al azar).
+  - Cada transición (s, a, r, s', done) se guarda en una memoria (replay buffer).
+  - Para entrenar usamos la ecuación de Bellman:
+        Q_objetivo = r + gamma * max_a' Q_target(s', a')    (si no terminó)
+        Q_objetivo = r                                     (si terminó)
+    y minimizamos la diferencia entre Q_policy(s, a) y Q_objetivo.
+  - Q_target es una copia de la red principal que se actualiza cada tanto,
+    así el objetivo no se mueve en cada paso y el entrenamiento es estable.
+"""
+
+import random
+from collections import deque
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 
-# TODO: Determine whether source URL must be included
-# https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
-torch.set_default_device(
+from actions.actions import Action
+from robot.robot import Robot
+
+
+device = torch.device(
     "cuda" if torch.cuda.is_available() else
     "mps" if torch.backends.mps.is_available() else
     "cpu"
 )
 
-seed = 42
+N_ACTIONS = len(Action)
 
-# Deep Q Learning Agent
+# Canales de la "imagen" que ve la CNN:
+#   0: vacío, 1: suciedad, 2: obstáculo, 3: cargador (one-hot de la grilla)
+#   4: posición del robot
+N_CHANNELS = 5
+
+# Datos extra que van directo a la red densa: batería, fila y columna del robot
+N_EXTRA = 3
+
+
+def encode_observation(obs):
+    """Convierte la observación del entorno en tensores para la red.
+
+    obs = (posición, batería, habitación) -> (grid [5, N, N], extra [3])
+    """
+
+    position, battery, room = obs
+    size = room.shape[0]
+
+    grid = np.zeros((N_CHANNELS, size, size), dtype=np.float32)
+    for cell_type in range(4):
+        grid[cell_type] = room == cell_type
+    grid[4][position] = 1.0
+
+    extra = np.array(
+        [
+            battery / Robot.MAX_BATTERY,
+            position[0] / (size - 1),
+            position[1] / (size - 1),
+        ],
+        dtype=np.float32,
+    )
+
+    return grid, extra
+
+
 class Model(nn.Module):
-    def __init__(self, room_size, middle_layers):
-        super(Model, self).__init__()
+    """Red Q: CNN para la habitación + red densa que da un valor por acción."""
 
+    def __init__(self, room_size, n_actions=N_ACTIONS):
+        super().__init__()
+
+        # padding=1 mantiene el tamaño de la grilla (N x N) en cada capa
         self.cnn = nn.Sequential(
-            nn.Conv2d(4, 32, (3, 3)),
+            nn.Conv2d(N_CHANNELS, 32, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Conv2d(32, 256, (3, 3)),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Flatten()
+            nn.Flatten(),
         )
-        
-        cnn_output_estimate = 256 * (room_size - 4) * (room_size - 4)
-        
+
+        cnn_output_size = 64 * room_size * room_size
+
         self.dense = nn.Sequential(
-            nn.Linear(cnn_output_estimate + 3, 64),
+            nn.Linear(cnn_output_size + N_EXTRA, 256),
             nn.ReLU(),
-            nn.Linear(64, 32),
+            nn.Linear(256, 64),
             nn.ReLU(),
-            nn.Linear(32, 4),
+            nn.Linear(64, n_actions),
         )
-    
-    def forward(self, obs):
-        cnn_input = obs[2]
-        cnn_output = (self.cnn)(cnn_input)
-        dense_input = np.concat((obs[0], (obs[1],), cnn_output))
-        dense_output = (self.dense)(dense_input)
-        return dense_input
+
+    def forward(self, grid, extra):
+        # grid: [batch, 5, N, N]   extra: [batch, 3]   ->   [batch, n_actions]
+        features = self.cnn(grid)
+        return self.dense(torch.cat((features, extra), dim=1))
 
 
-def train_target_model(model, env, loss_fn, discount_factor, learning_rate, epochs):
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    for epoch in range(epochs):
-        env.reset()
+class ReplayBuffer:
+    """Memoria de transiciones pasadas para entrenar con muestras al azar."""
 
-        done = False
-        current_state = env.get_observation()
-        while not done:
-            optimizer.zero_grad()
+    def __init__(self, capacity):
+        self.memory = deque(maxlen=capacity)
 
-            predicted_q = model(current_state)
+    def push(self, grid, extra, action, reward, next_grid, next_extra, done):
+        self.memory.append((grid, extra, action, reward, next_grid, next_extra, done))
 
-            best_action = np.argmax(predicted_q)
-            next_state, reward, done = env.step(best_action)
-            target_q = reward + discount_factor * np.max(model(next_state))
+    def sample(self, batch_size):
+        batch = random.sample(self.memory, batch_size)
+        grid, extra, action, reward, next_grid, next_extra, done = zip(*batch)
 
-            loss = loss_fn(predicted_q, target_q)
-            loss.backward()
-            optimizer.step()
+        def to_tensor(values, dtype=torch.float32):
+            return torch.as_tensor(np.array(values), dtype=dtype, device=device)
 
-            current_state = next_state
+        return (
+            to_tensor(grid),
+            to_tensor(extra),
+            to_tensor(action, torch.int64),
+            to_tensor(reward),
+            to_tensor(next_grid),
+            to_tensor(next_extra),
+            to_tensor(done),
+        )
 
-def train_policy_model(model, target_model, loss_fn, discount_factor, learning_rate, epochs):
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    for epoch in range(epochs):
-        env.reset()
+    def __len__(self):
+        return len(self.memory)
 
-        done = False
-        current_state = env.get_observation()
-        while not done:
-            optimizer.zero_grad()
 
-            predicted_action_weights = model(current_state)
+class DQNAgent:
 
-            target_action = np.argmax( target_model(current_state) )
-            target_action_weights = np.full_like(predicted_action_weights, -1e9)
-            target_action_weights[target_action] = 1e9
+    def __init__(
+        self,
+        room_size,
+        discount_factor=0.99,
+        learning_rate=1e-4,
+        batch_size=64,
+        buffer_capacity=50_000,
+        min_buffer_size=1_000,
+        target_update_steps=1_000,
+        epsilon_start=1.0,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
+    ):
+        self.discount_factor = discount_factor
+        self.batch_size = batch_size
+        self.min_buffer_size = min_buffer_size
+        self.target_update_steps = target_update_steps
 
-            loss = loss_fn(predicted_action_weights, target_action_weights)
-            loss.backward()
-            optimizer.step()
+        self.epsilon = epsilon_start
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
 
-            current_state = next_state
+        # Red principal (la que entrenamos y usamos para actuar)
+        self.policy_net = Model(room_size).to(device)
 
-"""
-def train_model(model, optimizer, criterion, train_loader, epochs):
-    model.train()
-    for epoch in range(epochs):
-        for batch_idx, (data, target) in enumerate(train_loader):
-            optimizer.zero_grad()
-            output = model(data)
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-"""
+        # Red objetivo: copia de la principal, solo se usa para calcular Q_objetivo
+        self.target_net = Model(room_size).to(device)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
+
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
+        self.loss_fn = nn.SmoothL1Loss()  # Huber: más estable que MSE en DQN
+        self.memory = ReplayBuffer(buffer_capacity)
+        self.learn_steps = 0
+
+    # ------------------------------------------------------------------
+    # Actuar
+    # ------------------------------------------------------------------
+
+    def decide_action(self, obs, greedy=False):
+        """Epsilon-greedy: con prob. epsilon explora, si no elige argmax Q."""
+
+        if not greedy and random.random() < self.epsilon:
+            return random.randrange(N_ACTIONS)
+
+        grid, extra = encode_observation(obs)
+        with torch.no_grad():
+            q_values = self.policy_net(
+                torch.as_tensor(grid, device=device).unsqueeze(0),
+                torch.as_tensor(extra, device=device).unsqueeze(0),
+            )
+        return int(q_values.argmax(dim=1).item())
+
+    # ------------------------------------------------------------------
+    # Aprender
+    # ------------------------------------------------------------------
+
+    def receive_reward(self, obs, action, reward, next_obs, done):
+        """Guarda la transición y hace un paso de entrenamiento."""
+
+        grid, extra = encode_observation(obs)
+        next_grid, next_extra = encode_observation(next_obs)
+        self.memory.push(grid, extra, action, reward, next_grid, next_extra, float(done))
+
+        return self.learn()
+
+    def learn(self):
+        if len(self.memory) < self.min_buffer_size:
+            return None
+
+        grid, extra, action, reward, next_grid, next_extra, done = \
+            self.memory.sample(self.batch_size)
+
+        # Q(s, a) que predice la red principal para la acción que se tomó
+        predicted_q = self.policy_net(grid, extra).gather(1, action.unsqueeze(1)).squeeze(1)
+
+        # Ecuación de Bellman con la red objetivo
+        with torch.no_grad():
+            next_q = self.target_net(next_grid, next_extra).max(dim=1).values
+            target_q = reward + self.discount_factor * next_q * (1 - done)
+
+        loss = self.loss_fn(predicted_q, target_q)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.policy_net.parameters(), 10)
+        self.optimizer.step()
+
+        # Cada tanto copiamos los pesos de la red principal a la objetivo
+        self.learn_steps += 1
+        if self.learn_steps % self.target_update_steps == 0:
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+
+        return loss.item()
+
+    def end_episode(self):
+        """Al terminar cada episodio exploramos un poco menos."""
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+
+    # ------------------------------------------------------------------
+    # Guardar / cargar
+    # ------------------------------------------------------------------
+
+    def save(self, path):
+        torch.save(self.policy_net.state_dict(), path)
+
+    def load(self, path):
+        state = torch.load(path, map_location=device)
+        self.policy_net.load_state_dict(state)
+        self.target_net.load_state_dict(state)
