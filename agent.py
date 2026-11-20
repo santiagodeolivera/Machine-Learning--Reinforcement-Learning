@@ -43,7 +43,7 @@ class MLPModel(nn.Module):
         dense_output = (self.dense)(dense_input)
         return dense_input
 
-class Model(nn.Module):
+class DQNModel(nn.Module):
     def __init__(self, room_size, middle_layers):
         super(Model, self).__init__()
         self.policy_nn = MLPModel(room_size, middle_layers)
