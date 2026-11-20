@@ -44,58 +44,29 @@ class Model(nn.Module):
         return dense_input
 
 
-def train_target_model(model, env, loss_fn, discount_factor, learning_rate, epochs):
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+def train_target_model(policy_nn, target_nn, env, loss_fn, discount_factor, learning_rate, epochs, update_steps):
+    optimizer = optim.Adam(policy_nn.parameters(), lr=learning_rate)
     for epoch in range(epochs):
-        env.reset()
-
         done = False
-        current_state = env.get_observation()
+        current_state = env.reset()
+        i = 0
         while not done:
             optimizer.zero_grad()
-
-            predicted_q = model(current_state)
-
+            
+            predicted_q = policy_nn(current_state)
+            
             best_action = np.argmax(predicted_q)
             next_state, reward, done = env.step(best_action)
-            target_q = reward + discount_factor * np.max(model(next_state))
-
-            loss = loss_fn(predicted_q, target_q)
+            
+            with torch.no_grad():
+                target_q = reward + discount_factor * np.max( target_nn(next_state) )
+            
+            loss = loss_fn(predicted_q[best_action], target_q)
             loss.backward()
             optimizer.step()
-
+            
             current_state = next_state
-
-def train_policy_model(model, target_model, loss_fn, discount_factor, learning_rate, epochs):
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    for epoch in range(epochs):
-        env.reset()
-
-        done = False
-        current_state = env.get_observation()
-        while not done:
-            optimizer.zero_grad()
-
-            predicted_action_weights = model(current_state)
-
-            target_action = np.argmax( target_model(current_state) )
-            target_action_weights = np.full_like(predicted_action_weights, -1e9)
-            target_action_weights[target_action] = 1e9
-
-            loss = loss_fn(predicted_action_weights, target_action_weights)
-            loss.backward()
-            optimizer.step()
-
-            current_state = next_state
-
-"""
-def train_model(model, optimizer, criterion, train_loader, epochs):
-    model.train()
-    for epoch in range(epochs):
-        for batch_idx, (data, target) in enumerate(train_loader):
-            optimizer.zero_grad()
-            output = model(data)
-            loss = criterion(output, target)
-            loss.backward()
-            optimizer.step()
-"""
+            
+            if i % update_steps == 0:
+                target_nn.set_state_dict( policy_nn.state_dict() )
+            i += 1
