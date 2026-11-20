@@ -9,7 +9,7 @@ import argparse
 
 import numpy as np
 
-from agent import DQNAgent
+from agent import DQNModel
 from enviroment import Environment
 
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     env = Environment()
-    agent = DQNAgent(room_size=env.size)
+    agent = DQNModel(room_size=env.size)
 
     if args.watch:
         agent.load(MODEL_PATH)

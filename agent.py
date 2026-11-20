@@ -3,16 +3,19 @@
 Basado en: https://docs.pytorch.org/tutorials/intermediate/reinforcement_q_learning.html
 
 Idea general:
-  - Una red neuronal (CNN + densa) estima Q(s, a): cuánta recompensa futura
-    esperamos si en el estado s hacemos la acción a.
+  - Una red neuronal (MLPModel: CNN + densa) estima Q(s, a): cuánta recompensa
+    futura esperamos si en el estado s hacemos la acción a.
+  - DQNModel tiene dos copias de esa red:
+        policy_nn: la que entrenamos y usamos para elegir acciones.
+        target_nn: copia que se actualiza cada `update_steps` pasos y se usa
+                   solo para calcular el Q objetivo (así el objetivo no se
+                   mueve en cada paso y el entrenamiento es estable).
   - El robot elige acciones con epsilon-greedy (a veces explora al azar).
   - Cada transición (s, a, r, s', done) se guarda en una memoria (replay buffer).
   - Para entrenar usamos la ecuación de Bellman:
         Q_objetivo = r + gamma * max_a' Q_target(s', a')    (si no terminó)
         Q_objetivo = r                                     (si terminó)
     y minimizamos la diferencia entre Q_policy(s, a) y Q_objetivo.
-  - Q_target es una copia de la red principal que se actualiza cada tanto,
-    así el objetivo no se mueve en cada paso y el entrenamiento es estable.
 """
 
 import random
@@ -26,6 +29,8 @@ import torch.optim as optim
 from actions.actions import Action
 from robot.robot import Robot
 
+
+seed = 42
 
 device = torch.device(
     "cuda" if torch.cuda.is_available() else
@@ -45,7 +50,7 @@ N_EXTRA = 3
 
 
 def encode_observation(obs):
-    """Convierte la observación del entorno en tensores para la red.
+    """Convierte la observación del entorno en arrays para la red.
 
     obs = (posición, batería, habitación) -> (grid [5, N, N], extra [3])
     """
@@ -70,7 +75,7 @@ def encode_observation(obs):
     return grid, extra
 
 
-class Model(nn.Module):
+class MLPModel(nn.Module):
     """Red Q: CNN para la habitación + red densa que da un valor por acción."""
 
     def __init__(self, room_size, n_actions=N_ACTIONS):
@@ -131,7 +136,7 @@ class ReplayBuffer:
         return len(self.memory)
 
 
-class DQNAgent:
+class DQNModel:
 
     def __init__(
         self,
@@ -141,7 +146,7 @@ class DQNAgent:
         batch_size=64,
         buffer_capacity=50_000,
         min_buffer_size=1_000,
-        target_update_steps=1_000,
+        update_steps=1_000,
         epsilon_start=1.0,
         epsilon_min=0.05,
         epsilon_decay=0.995,
@@ -149,21 +154,21 @@ class DQNAgent:
         self.discount_factor = discount_factor
         self.batch_size = batch_size
         self.min_buffer_size = min_buffer_size
-        self.target_update_steps = target_update_steps
+        self.update_steps = update_steps
 
         self.epsilon = epsilon_start
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
 
         # Red principal (la que entrenamos y usamos para actuar)
-        self.policy_net = Model(room_size).to(device)
+        self.policy_nn = MLPModel(room_size).to(device)
 
         # Red objetivo: copia de la principal, solo se usa para calcular Q_objetivo
-        self.target_net = Model(room_size).to(device)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()
+        self.target_nn = MLPModel(room_size).to(device)
+        self.target_nn.load_state_dict(self.policy_nn.state_dict())
+        self.target_nn.eval()
 
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.policy_nn.parameters(), lr=learning_rate)
         self.loss_fn = nn.SmoothL1Loss()  # Huber: más estable que MSE en DQN
         self.memory = ReplayBuffer(buffer_capacity)
         self.learn_steps = 0
@@ -180,7 +185,7 @@ class DQNAgent:
 
         grid, extra = encode_observation(obs)
         with torch.no_grad():
-            q_values = self.policy_net(
+            q_values = self.policy_nn(
                 torch.as_tensor(grid, device=device).unsqueeze(0),
                 torch.as_tensor(extra, device=device).unsqueeze(0),
             )
@@ -207,24 +212,24 @@ class DQNAgent:
             self.memory.sample(self.batch_size)
 
         # Q(s, a) que predice la red principal para la acción que se tomó
-        predicted_q = self.policy_net(grid, extra).gather(1, action.unsqueeze(1)).squeeze(1)
+        predicted_q = self.policy_nn(grid, extra).gather(1, action.unsqueeze(1)).squeeze(1)
 
         # Ecuación de Bellman con la red objetivo
         with torch.no_grad():
-            next_q = self.target_net(next_grid, next_extra).max(dim=1).values
+            next_q = self.target_nn(next_grid, next_extra).max(dim=1).values
             target_q = reward + self.discount_factor * next_q * (1 - done)
 
         loss = self.loss_fn(predicted_q, target_q)
 
         self.optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_norm_(self.policy_net.parameters(), 10)
+        nn.utils.clip_grad_norm_(self.policy_nn.parameters(), 10)
         self.optimizer.step()
 
-        # Cada tanto copiamos los pesos de la red principal a la objetivo
+        # Cada `update_steps` pasos copiamos los pesos de policy_nn a target_nn
         self.learn_steps += 1
-        if self.learn_steps % self.target_update_steps == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
+        if self.learn_steps % self.update_steps == 0:
+            self.target_nn.load_state_dict(self.policy_nn.state_dict())
 
         return loss.item()
 
@@ -237,9 +242,9 @@ class DQNAgent:
     # ------------------------------------------------------------------
 
     def save(self, path):
-        torch.save(self.policy_net.state_dict(), path)
+        torch.save(self.policy_nn.state_dict(), path)
 
     def load(self, path):
         state = torch.load(path, map_location=device)
-        self.policy_net.load_state_dict(state)
-        self.target_net.load_state_dict(state)
+        self.policy_nn.load_state_dict(state)
+        self.target_nn.load_state_dict(state)
