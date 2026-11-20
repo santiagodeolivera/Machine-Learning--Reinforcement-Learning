@@ -14,9 +14,9 @@ torch.set_default_device(
 seed = 42
 
 # Deep Q Learning Agent
-class Model(nn.Module):
+class MLPModel(nn.Module):
     def __init__(self, room_size, middle_layers):
-        super(Model, self).__init__()
+        super(MLPModel, self).__init__()
 
         self.cnn = nn.Sequential(
             nn.Conv2d(4, 32, (3, 3)),
@@ -39,10 +39,22 @@ class Model(nn.Module):
     def forward(self, obs):
         cnn_input = obs[2]
         cnn_output = (self.cnn)(cnn_input)
-        dense_input = np.concat((obs[0], (obs[1],), cnn_output))
+        dense_input = torch.cat((obs[0], (obs[1],), cnn_output))
         dense_output = (self.dense)(dense_input)
         return dense_input
 
+class Model(nn.Module):
+    def __init__(self, room_size, middle_layers):
+        super(Model, self).__init__()
+        self.policy_nn = MLPModel(room_size, middle_layers)
+        self.target_nn = MLPModel(room_size, middle_layers)
+        self.target_nn.load_state_dict( self.policy_nn.state_dict() )
+    
+    def forward(self, obs):
+        return self.policy_nn(obs)
+    
+    def train(self, env, loss_fn, discount_factor, learning_rate, epochs, update_steps):
+        train_target_model(self.policy_nn, self.target_nn, env, loss_fn, discount_factor, learning_rate, epochs, update_steps)
 
 def train_target_model(policy_nn, target_nn, env, loss_fn, discount_factor, learning_rate, epochs, update_steps):
     optimizer = optim.Adam(policy_nn.parameters(), lr=learning_rate)
