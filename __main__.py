@@ -11,7 +11,7 @@ import numpy as np
 
 from agent import DQNModel
 from enviroment import Environment
-
+from actions.actions import Action
 
 MODEL_PATH = "dqn_robot.pt"
 
@@ -63,7 +63,9 @@ def watch_agent(agent, env):
 
     while not done:
         input("Enter para el siguiente paso...")
-        obs, reward, done = env.step(agent.decide_action(obs, greedy=True))
+        action_id = agent.decide_action(obs, greedy=True)
+        print(f"\nAcción elegida: {Action(action_id).name}")
+        obs, reward, done = env.step(action_id)
         total_reward += reward
         env.display()
 

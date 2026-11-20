@@ -48,11 +48,23 @@ N_CHANNELS = 5
 # Datos extra que van directo a la red densa: batería, fila y columna del robot
 N_EXTRA = 3
 
+# Determina si el modelo toma en cuenta una sección de alta calidad alrededor del robot,
+# como una vista a corta distancia.
+INCLUDE_HQ_OBSERVATION = False
+
+# Tamaño de la sección de alta calidad (1 -> 3x3, 2 -> 5x5, etc.)
+HQ_OBSERVATION_SIZE = 1
+
+
+if INCLUDE_HQ_OBSERVATION:
+    EXTRA_SIZE = N_EXTRA + N_CHANNELS * (HQ_OBSERVATION_SIZE * 2 + 1) ** 2
+else:
+    EXTRA_SIZE = N_EXTRA
 
 def encode_observation(obs):
     """Convierte la observación del entorno en arrays para la red.
 
-    obs = (posición, batería, habitación) -> (grid [5, N, N], extra [3])
+    obs = (posición, batería, habitación) -> (grid [N_CHANNELS, N, N], extra [EXTRA_SIZE])
     """
 
     position, battery, room = obs
@@ -63,8 +75,30 @@ def encode_observation(obs):
         grid[cell_type] = room == cell_type
     grid[4][position] = 1.0
 
+    if INCLUDE_HQ_OBSERVATION:
+        hq_grid = np.zeros((N_CHANNELS, HQ_OBSERVATION_SIZE * 2 + 1, HQ_OBSERVATION_SIZE * 2 + 1), dtype=np.float32)
+        hq_grid[2] = 1.0  # Asumimos que los bordes son obstáculos
+        # TODO: Confirmar si está bien que la sección de alta calidad sea 3x3
+        # TODO: Confirmar si está bien que los bordes sean obstáculos
+
+        min_x = max(0, position[0] - HQ_OBSERVATION_SIZE)
+        max_x = min(size, position[0] + HQ_OBSERVATION_SIZE + 1)
+        min_y = max(0, position[1] - HQ_OBSERVATION_SIZE)
+        max_y = min(size, position[1] + HQ_OBSERVATION_SIZE + 1)
+        hq_grid_data = grid[:, min_x:max_x, min_y:max_y]
+
+        # Posición del robot dentro de la sección de alta calidad
+        relative_position = divmod(hq_grid_data[4].argmax(), hq_grid_data.shape[2])
+
+        min_x = 1-relative_position[0]
+        min_y = 1-relative_position[1]
+        max_x = min_x + hq_grid_data.shape[1]
+        max_y = min_y + hq_grid_data.shape[2]
+        hq_grid[:, min_x:max_x, min_y:max_y] = hq_grid_data
+
     extra = np.array(
         [
+            *( hq_grid.flatten() if INCLUDE_HQ_OBSERVATION else [] ),
             battery / Robot.MAX_BATTERY,
             position[0] / (size - 1),
             position[1] / (size - 1),
@@ -93,7 +127,7 @@ class MLPModel(nn.Module):
         cnn_output_size = 64 * room_size * room_size
 
         self.dense = nn.Sequential(
-            nn.Linear(cnn_output_size + N_EXTRA, 256),
+            nn.Linear(cnn_output_size + EXTRA_SIZE, 256),
             nn.ReLU(),
             nn.Linear(256, 64),
             nn.ReLU(),
@@ -101,8 +135,10 @@ class MLPModel(nn.Module):
         )
 
     def forward(self, grid, extra):
-        # grid: [batch, 5, N, N]   extra: [batch, 3]   ->   [batch, n_actions]
+        # grid: [batch, N_CHANNELS, N, N]   extra: [batch, EXTRA_SIZE]   ->   [batch, N_ACTIONS]
+
         features = self.cnn(grid)
+
         return self.dense(torch.cat((features, extra), dim=1))
 
 
