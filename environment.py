@@ -1,7 +1,6 @@
 
 import numpy as np
 import random
-from collections import deque
 
 from obstacles.bed import Bed
 from obstacles.table import Table
@@ -50,7 +49,7 @@ class Environment:
 
         self.robot = Robot(self.room_generator.start_position)
         self.steps = 0
-        room = self.room_cache.copy()
+        self.room = self.room_cache.copy()
         self.no_clean_steps = 0
 
         return self.get_observation()

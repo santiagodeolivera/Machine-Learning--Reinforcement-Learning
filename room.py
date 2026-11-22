@@ -1,8 +1,10 @@
 import random
 from enum import IntEnum
+from collections import deque
 
 import numpy as np
 
+from actions.actions import MOVES
 from obstacles.bed import Bed
 from obstacles.table import Table
 
@@ -149,7 +151,7 @@ class RandomRoomGenerator:
 
         return result_obstacles
 
-    def all_cells_reachable(self):
+    def all_cells_reachable(self, room):
 
         visited = {self.start_position}
         queue = deque([self.start_position])
@@ -163,7 +165,7 @@ class RandomRoomGenerator:
                 nx = x + dx
                 ny = y + dy
 
-                if self.is_free(nx, ny) and (nx, ny) not in visited:
+                if self.is_free(room, nx, ny) and (nx, ny) not in visited:
                     visited.add((nx, ny))
                     queue.append((nx, ny))
 
@@ -171,7 +173,7 @@ class RandomRoomGenerator:
 
         return len(visited) == free_cells
 
-    def place_dirt(self):
+    def place_dirt(self, room):
 
         # Celdas libres que quedaron después de poner los muebles
         available_positions = [
@@ -190,6 +192,13 @@ class RandomRoomGenerator:
 
         for position in dirt:
             room[position] = int(CellType.DIRT)
+    
+    def is_free(self, room, x, y):
+        return (
+            0 <= x < self.size
+            and 0 <= y < self.size
+            and room[x, y] != int(CellType.OBSTACLE)
+        )
 
 def get_room_generator(args):
     if args.room_src and args.obstacles_src:

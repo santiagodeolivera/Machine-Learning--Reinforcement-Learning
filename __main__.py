@@ -1,11 +1,12 @@
 """Entrena el robot limpiador con DQN.
 
 Uso (desde la carpeta del proyecto):
-    python . --rooms 2 --episodes-per-room 20 # entrena y guarda el modelo
-    python . --watch                          # mira jugar al modelo guardado
+    python . --rooms 40 --episodes-per-room 10 --review-times 10 # entrena y guarda el modelo
+    python . --watch                                             # mira jugar al modelo guardado
 """
 
 import argparse
+import time
 
 import numpy as np
 
@@ -20,6 +21,7 @@ MODEL_PATH = "dqn_robot.pt"
 def train_rl_agent(agent, env, *, n_rooms, n_episodes_per_room, log_every=20, review_times=0):
     history = []
 
+    time_checkpoint = time.time()
     episode = 1
     for _ in range(n_rooms):
         obs = env.reset()
@@ -50,14 +52,17 @@ def train_rl_agent(agent, env, *, n_rooms, n_episodes_per_room, log_every=20, re
                 agent.learn()
 
             if episode % log_every == 0:
+                next_time_checkpoint = time.time()
                 recent = np.array(history[-log_every:])
                 print(
                     f"Episodio {episode:4d} | "
                     f"recompensa media {recent[:, 0].mean():7.2f} | "
                     f"limpió {recent[:, 1].mean():4.1f}/{env.dirt_count} | "
                     f"pasos {recent[:, 2].mean():5.1f} | "
-                    f"epsilon {eps:.3f}"
+                    f"epsilon {eps:.3f} | "
+                    f"tiempo {next_time_checkpoint - time_checkpoint:6.2f}s"
                 )
+                time_checkpoint = next_time_checkpoint
 
             episode += 1
 
