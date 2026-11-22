@@ -45,7 +45,7 @@ def train_rl_agent(agent, env, *, n_rooms, n_episodes_per_room, log_every=20, re
                 eps = agent.epsilon
                 agent.end_episode()
 
-                dirt_left = int((env.room == int(CellType.DIRT)).sum())
+                dirt_left = int((env.room == CellType.DIRT).sum())
                 history.append((total_reward, env.dirt_count - dirt_left, env.steps))
             
             for _ in range(review_times):

@@ -19,6 +19,7 @@ class Environment:
     NO_BATTERY_PENALTY = -10  # quedarse sin batería
     CONT_NO_CLEAN_PENALTY = 0  # castigo por no limpiar nada en un periodo largo de tiempo (para que no se quede dando vueltas)
     CONT_NO_CLEAN_MIN_STEPS = 10  # pasos mínimos para empezar a aplicar el castigo por no limpiar nada
+    CYCLE_PENALTY = -0.5          # castigo por moverse en círculos (para que no se quede dando vueltas)
 
     def __init__(self, *, max_steps=200, room_generator):
 
@@ -41,6 +42,7 @@ class Environment:
         self.steps = 0
         self.generate_room()
         self.no_clean_steps = 0
+        self.cycle_history = []
 
         return self.get_observation()
     
@@ -51,6 +53,7 @@ class Environment:
         self.steps = 0
         self.room = self.room_cache.copy()
         self.no_clean_steps = 0
+        self.cycle_history = []
 
         return self.get_observation()
 
@@ -69,6 +72,12 @@ class Environment:
 
             if self.is_free(nx, ny):
                 self.robot.move((nx, ny))
+
+                if (nx, ny) in self.cycle_history:
+                    reward += self.CYCLE_PENALTY * len(self.cycle_history)
+                    self.cycle_history = []
+                else:
+                    self.cycle_history.append((nx, ny))
             else:
                 # Chocó: se queda donde está, pero gasta batería igual
                 reward += self.BUMP_PENALTY
@@ -77,10 +86,11 @@ class Environment:
         elif action == Action.CLEAN:
             self.robot.clean()
 
-            if self.room[self.robot.position] == int(CellType.DIRT):
-                self.room[self.robot.position] = int(CellType.EMPTY)
+            if self.room[self.robot.position] == CellType.DIRT:
+                self.room[self.robot.position] = CellType.EMPTY
                 reward += self.CLEAN_REWARD
                 cleaned = True
+                self.cycle_history = []
             else:
                 reward += self.CLEAN_PENALTY
 
@@ -90,7 +100,7 @@ class Environment:
 
         done = False
 
-        if not (self.room == int(CellType.DIRT)).any():
+        if not (self.room == CellType.DIRT).any():
             reward += self.ALL_CLEAN_REWARD
             done = True
         elif self.robot.battery <= 0:
@@ -126,7 +136,7 @@ class Environment:
         return (
             0 <= x < self.size
             and 0 <= y < self.size
-            and self.room[x, y] != int(CellType.OBSTACLE)
+            and self.room[x, y] != CellType.OBSTACLE
         )
 
     # ------------------------------------------------------------------
@@ -158,13 +168,13 @@ class Environment:
 
                 if (x, y) == self.robot.position:
                     row.append(" R ")
-                elif self.room[x, y] == int(CellType.EMPTY):
+                elif self.room[x, y] == CellType.EMPTY:
                     row.append(" . ")
-                elif self.room[x, y] == int(CellType.DIRT):
+                elif self.room[x, y] == CellType.DIRT:
                     row.append(" * ")
-                elif self.room[x, y] == int(CellType.OBSTACLE):
+                elif self.room[x, y] == CellType.OBSTACLE:
                     row.append(" # ")
-                elif self.room[x, y] == int(CellType.CHARGER):
+                elif self.room[x, y] == CellType.CHARGER:
                     row.append(" C ")
 
             print("".join(row))

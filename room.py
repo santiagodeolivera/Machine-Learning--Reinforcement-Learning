@@ -1,5 +1,4 @@
 import random
-from enum import IntEnum
 from collections import deque
 
 import numpy as np
@@ -8,7 +7,7 @@ from actions.actions import MOVES
 from obstacles.bed import Bed
 from obstacles.table import Table
 
-class CellType(IntEnum):
+class CellType:
     EMPTY = 0
     DIRT = 1
     OBSTACLE = 2
@@ -28,22 +27,21 @@ class FixedRoomGenerator:
         self.charger_position = charger_position if charger_position is not None else (size - 1, size - 1)
 
     def generate_room(self):
-        room = np.full((self.size, self.size), int(CellType.EMPTY), dtype=int)
+        room = np.full((self.size, self.size), CellType.EMPTY, dtype=int)
 
         for i, row in enumerate(self.src.split("/")):
             for j, cell in enumerate(row):
                 if cell == "#":
-                    char = CellType.OBSTACLE
+                    room[i, j] = CellType.OBSTACLE
                 elif cell == "*":
-                    char = CellType.DIRT
+                    room[i, j] = CellType.DIRT
                 elif cell == "C":
-                    char = CellType.CHARGER
+                    room[i, j] = CellType.CHARGER
                 elif cell == ".":
-                    char = CellType.EMPTY
+                    room[i, j] = CellType.EMPTY
                 else:
                     raise ValueError(f"Caracter inválido en la habitación: {repr(cell)}")
                 
-                room[i, j] = int(char)
         
         obstacles = []
         if self.obstacles_src != "X":
@@ -82,10 +80,10 @@ class RandomRoomGenerator:
         for _ in range(self.max_room_attempts):
 
             # Reiniciamos la habitación
-            room = np.full((self.size, self.size), int(CellType.EMPTY), dtype=int)
+            room = np.full((self.size, self.size), CellType.EMPTY, dtype=int)
 
             # Volvemos a colocar el cargador
-            room[self.charger_position] = int(CellType.CHARGER)
+            room[self.charger_position] = CellType.CHARGER
 
             # Elegimos aleatoriamente los muebles
             obstacles = self.generate_obstacles()
@@ -133,14 +131,14 @@ class RandomRoomGenerator:
 
                 # Comprobamos que todas las casillas estén libres
                 if all(
-                    room[c] == int(CellType.EMPTY)
+                    room[c] == CellType.EMPTY
                     and c != self.start_position
                     for c in cells
                 ):
 
                     # Ocupamos las casillas
                     for c in cells:
-                        room[c] = int(CellType.OBSTACLE)
+                        room[c] = CellType.OBSTACLE
 
                     result_obstacles.append((obstacle, (x, y)))
                     placed = True
@@ -169,7 +167,7 @@ class RandomRoomGenerator:
                     visited.add((nx, ny))
                     queue.append((nx, ny))
 
-        free_cells = np.sum(room != int(CellType.OBSTACLE))
+        free_cells = np.sum(room != CellType.OBSTACLE)
 
         return len(visited) == free_cells
 
@@ -180,7 +178,7 @@ class RandomRoomGenerator:
             (x, y)
             for x in range(self.size)
             for y in range(self.size)
-            if room[x, y] == int(CellType.EMPTY)
+            if room[x, y] == CellType.EMPTY
             and (x, y) != self.start_position
         ]
 
@@ -191,13 +189,13 @@ class RandomRoomGenerator:
         )
 
         for position in dirt:
-            room[position] = int(CellType.DIRT)
+            room[position] = CellType.DIRT
     
     def is_free(self, room, x, y):
         return (
             0 <= x < self.size
             and 0 <= y < self.size
-            and room[x, y] != int(CellType.OBSTACLE)
+            and room[x, y] != CellType.OBSTACLE
         )
 
 def get_room_generator(args):
