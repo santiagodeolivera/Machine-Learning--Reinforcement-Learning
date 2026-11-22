@@ -50,10 +50,10 @@ N_EXTRA = 3
 
 # Determina si el modelo toma en cuenta una sección de alta calidad alrededor del robot,
 # como una vista a corta distancia.
-INCLUDE_HQ_OBSERVATION = False
+INCLUDE_HQ_OBSERVATION = True
 
 # Tamaño de la sección de alta calidad (1 -> 3x3, 2 -> 5x5, etc.)
-HQ_OBSERVATION_SIZE = 1
+HQ_OBSERVATION_SIZE = 2
 
 
 if INCLUDE_HQ_OBSERVATION:
@@ -86,12 +86,12 @@ def encode_observation(obs):
         min_y = max(0, position[1] - HQ_OBSERVATION_SIZE)
         max_y = min(size, position[1] + HQ_OBSERVATION_SIZE + 1)
         hq_grid_data = grid[:, min_x:max_x, min_y:max_y]
-
+        
         # Posición del robot dentro de la sección de alta calidad
         relative_position = divmod(hq_grid_data[4].argmax(), hq_grid_data.shape[2])
 
-        min_x = 1-relative_position[0]
-        min_y = 1-relative_position[1]
+        min_x = HQ_OBSERVATION_SIZE - relative_position[0]
+        min_y = HQ_OBSERVATION_SIZE - relative_position[1]
         max_x = min_x + hq_grid_data.shape[1]
         max_y = min_y + hq_grid_data.shape[2]
         hq_grid[:, min_x:max_x, min_y:max_y] = hq_grid_data
@@ -117,19 +117,21 @@ class MLPModel(nn.Module):
 
         # padding=1 mantiene el tamaño de la grilla (N x N) en cada capa
         self.cnn = nn.Sequential(
-            nn.Conv2d(N_CHANNELS, 32, kernel_size=3, padding=1),
+            nn.Conv2d(N_CHANNELS, 32, kernel_size=2),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(32, 64, kernel_size=2),
             nn.ReLU(),
             nn.Flatten(),
         )
 
-        cnn_output_size = 64 * room_size * room_size
+        cnn_output_size = 64 * (room_size - 2)**2
 
         self.dense = nn.Sequential(
             nn.Linear(cnn_output_size + EXTRA_SIZE, 256),
             nn.ReLU(),
             nn.Linear(256, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
             nn.ReLU(),
             nn.Linear(64, n_actions),
         )
