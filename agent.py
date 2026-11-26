@@ -55,7 +55,6 @@ INCLUDE_HQ_OBSERVATION = True
 # Tamaño de la sección de alta calidad (1 -> 3x3, 2 -> 5x5, etc.)
 HQ_OBSERVATION_SIZE = 2
 
-
 if INCLUDE_HQ_OBSERVATION:
     EXTRA_SIZE = N_EXTRA + N_CHANNELS * (HQ_OBSERVATION_SIZE * 2 + 1) ** 2
 else:
@@ -78,8 +77,6 @@ def encode_observation(obs):
     if INCLUDE_HQ_OBSERVATION:
         hq_grid = np.zeros((N_CHANNELS, HQ_OBSERVATION_SIZE * 2 + 1, HQ_OBSERVATION_SIZE * 2 + 1), dtype=np.float32)
         hq_grid[2] = 1.0  # Asumimos que los bordes son obstáculos
-        # TODO: Confirmar si está bien que la sección de alta calidad sea 3x3
-        # TODO: Confirmar si está bien que los bordes sean obstáculos
 
         min_x = max(0, position[0] - HQ_OBSERVATION_SIZE)
         max_x = min(size, position[0] + HQ_OBSERVATION_SIZE + 1)

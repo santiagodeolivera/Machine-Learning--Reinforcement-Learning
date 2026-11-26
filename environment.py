@@ -75,7 +75,7 @@ class Environment:
 
                 if (nx, ny) in self.cycle_history:
                     reward += self.CYCLE_PENALTY * len(self.cycle_history)
-                    self.cycle_history = []
+                    del self.cycle_history[self.cycle_history.index((nx, ny))+1:]
                 else:
                     self.cycle_history.append((nx, ny))
             else:
